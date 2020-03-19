@@ -23,4 +23,7 @@ WORKDIR /murmur
 COPY --chown=nobody:nobody --from=setup /tmp/murmur-static_x86-${MURMUR_VERSION}/murmur.x86 murmur
 COPY --chown=nobody:nobody --from=setup /tmp/murmur-static_x86-${MURMUR_VERSION}/murmur.ini murmur.ini
 
+EXPOSE 64738/tcp
+EXPOSE 64738/udp
+
 ENTRYPOINT [ "/murmur/murmur", "-ini", "murmur.ini", "-fg"]
