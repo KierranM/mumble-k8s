@@ -14,6 +14,9 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+annotations: {}
+podAnnotations: {}
+
 config:
   welcomeText: "<br />Welcome to this server running <b>Murmur</b>.<br />Enjoy your stay!<br />"
   bandwidth: 72000
@@ -94,6 +97,7 @@ securityContext: {}
 service:
   type: ClusterIP
   port: 64738
+  annotations: {}
 
 resources: {}
   # We usually recommend not to specify default resources and to leave this as a conscious
