@@ -26,4 +26,4 @@ COPY --chown=nobody:nobody --from=setup /tmp/murmur-static_x86-${MURMUR_VERSION}
 EXPOSE 64738/tcp
 EXPOSE 64738/udp
 
-ENTRYPOINT [ "/murmur/murmur", "-ini", "murmur.ini", "-fg"]
+ENTRYPOINT [ "/murmur/murmur", "-fg"]
