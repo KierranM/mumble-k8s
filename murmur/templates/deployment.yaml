@@ -1,0 +1,154 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "murmur.fullname" . }}
+  labels:
+    {{- include "murmur.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "murmur.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "murmur.selectorLabels" . | nindent 8 }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      serviceAccountName: {{ include "murmur.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        {{- if .Values.mysql.enabled }}
+        - name: "wait-for-db"
+          image: "{{ .Values.initContainerImage }}"
+          command:
+            - 'sh'
+            - '-c'
+            - >
+              until nc -z -w 2 {{ .Release.Name }}-mysql {{ .Values.mysql.service.port }} && echo database ok; do
+                sleep 2;
+              done;
+        {{- end }}
+        - name: set-secrets
+          image: "{{ .Values.initContainerImage }}"
+          env:
+          {{- if .Values.mysql.enabled }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.mysql.mysqlDatabase }}
+            - name: MYSQL_USER
+              value: {{ .Values.mysql.mysqlUser }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "murmur.fullname" . }}-mysql
+                  key: mysql-password
+            - name: MYSQL_HOST
+              value: {{ include "murmur.fullname" . }}-mysql
+            - name: MYSQL_PORT
+              value: {{ .Values.mysql.service.port | quote }}
+          {{- else }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.database.name }}
+            - name: MYSQL_USER
+              value: {{ .Values.database.user }}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                {{- if .Values.database.password }}
+                  name: {{ include "murmur.fullname" . }}
+                  key: mysql-password
+                {{- else }}
+                  name: {{ .Values.database.passwordSecret }}
+                  key: {{ .Values.database.passwordSecretKey }}
+                {{- end }}
+            - name: MYSQL_HOST
+              value: {{ .Values.database.host }}
+            - name: MYSQL_PORT
+              value: {{ .Values.database.port | quote }}
+          {{- end }}
+          {{- if or .Values.config.serverPassword .Values.config.serverPasswordSecret }}
+            - name: SERVER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                {{- if .Values.config.serverPassword }}
+                  name: {{ include "murmur.fullname" . }}
+                  key: server-password
+                {{- else }}
+                  name: {{ .Values.config.serverPasswordSecret }}
+                  key: {{ .Values.config.serverPasswordSecretKey }}
+                {{- end}}
+          {{- end }}
+          command:
+            - /bin/sh
+            - -c
+            - >
+              cp /opt/murmur.ini /tmp/murmur.ini &&
+              sed -i.bak "s/##MYSQL_DATABASE##/${MYSQL_DATABASE}/g" /tmp/murmur.ini &&
+              sed -i.bak "s/##MYSQL_USER##/${MYSQL_USER}/g" /tmp/murmur.ini &&
+              sed -i.bak "s/##MYSQL_PASSWORD##/${MYSQL_PASSWORD}/g" /tmp/murmur.ini &&
+              sed -i.bak "s/##MYSQL_HOST##/${MYSQL_HOST}/g" /tmp/murmur.ini &&
+              sed -i.bak "s/##MYSQL_PORT##/${MYSQL_PORT}/g" /tmp/murmur.ini &&
+              {{- if or .Values.config.serverPassword .Values.config.serverPasswordSecret }}
+              sed -i.bak "s/##SERVER_PASSWORD##/${SERVER_PASSWORD}/g" /tmp/murmur.ini &&
+              {{- end }}
+              mv /tmp/murmur.ini /opt/config/
+          volumeMounts:
+            - name: config-volume
+              mountPath: /opt/config
+            - name: configmap
+              mountPath: /opt/murmur.ini
+              subPath: murmur.ini
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -ini
+            - /murmur/config/murmur.ini
+          ports:
+            - name: tcp
+              containerPort: {{ .Values.config.port }}
+              protocol: TCP
+            - name: udp
+              containerPort: {{ .Values.config.port }}
+              protocol: UDP
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /murmur/config
+          {{- if .Values.config.tls.secret }}
+            - mountPath: /murmur/tls
+              name: tls
+              readOnly: true
+          {{- end}}
+
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      volumes:
+        - name: config-volume
+          emptyDir: {}
+        - name: configmap
+          configMap:
+            name: {{ include "murmur.fullname" . }}
+      {{- if .Values.config.tls.secret }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.config.tls.secret }}
+      {{- end }}
